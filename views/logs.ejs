@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>LLM Gateway — Logs</title>
+  <style>
+    body { font-family: sans-serif; max-width: 1000px; margin: 0 auto; padding: 24px; }
+    nav a { margin-right: 16px; color: #555; }
+    pre { background: #1a1a2e; color: #eee; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+    .meta { color: #90caf9; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="/admin">Dashboard</a>
+    <a href="/admin/logs">Logs</a>
+    <a href="/admin/logout">Logout</a>
+  </nav>
+  <h1>Recent logs</h1>
+  <p>Last <%= entries.length %> entries (in-memory).</p>
+  <pre><% entries.forEach(e => { %><span class="meta">[<%= e.ts %>] <%= e.level.toUpperCase() %></span> <%= e.msg %><% if (e.meta) { %> <%= e.meta %><% } %>
+<% }) %></pre>
+</body>
+</html>
