@@ -6,7 +6,8 @@ import {
   dashboard,
   apiCreateKey,
   apiRevokeKey,
-  logsPage
+  logsPage,
+  apiCallLogsJson
 } from "../controllers/admin.controller";
 import {
   providersPage,
@@ -30,6 +31,7 @@ router.get("/logout", logout);
 
 router.get("/", adminAuthMiddleware, dashboard);
 router.get("/logs", adminAuthMiddleware, logsPage);
+router.get("/api/call-logs", adminAuthMiddleware, apiCallLogsJson);
 router.post("/keys/create", adminAuthMiddleware, apiCreateKey);
 router.post("/keys/revoke", adminAuthMiddleware, apiRevokeKey);
 

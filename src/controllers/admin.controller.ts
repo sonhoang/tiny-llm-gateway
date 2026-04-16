@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { createKey, listKeys, revokeKey } from "../services/authKeyStore.service";
+import { getApiCallLogs } from "../services/apiCallLog.service";
 import { logger } from "../utils/logger";
 
 export function loginPage(req: Request, res: Response): void {
@@ -57,5 +58,9 @@ export function apiRevokeKey(req: Request, res: Response): void {
 }
 
 export function logsPage(_req: Request, res: Response): void {
-  res.render("logs", { entries: logger.getRecent() });
+  res.render("logs", { entries: logger.getRecent(), apiCalls: getApiCallLogs() });
+}
+
+export function apiCallLogsJson(_req: Request, res: Response): void {
+  res.json({ calls: getApiCallLogs() });
 }
