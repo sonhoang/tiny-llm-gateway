@@ -20,6 +20,8 @@
 <body>
   <nav>
     <a href="/admin">Dashboard</a>
+    <a href="/admin/providers">Providers (BYOK)</a>
+    <a href="/admin/chat">Test LLM</a>
     <a href="/admin/logs">Logs</a>
     <a href="/admin/logout">Logout</a>
   </nav>
@@ -41,7 +43,7 @@
 
   <h2>Active Keys</h2>
   <table>
-    <tr><th>Name</th><th>Key (masked)</th><th>Created</th><th>Last Used</th><th>Status</th><th>Action</th></tr>
+    <tr><th>Name</th><th>Key (masked)</th><th>Created</th><th>Last Used</th><th>Status</th><th>Test LLM</th><th>Action</th></tr>
     <% keys.forEach(k => { %>
     <tr>
       <td><%= k.name %></td>
@@ -49,6 +51,11 @@
       <td><%= new Date(k.createdAt).toLocaleString() %></td>
       <td><%= k.lastUsed ? new Date(k.lastUsed).toLocaleString() : "Never" %></td>
       <td><%= k.active ? "✅ Active" : "❌ Revoked" %></td>
+      <td>
+        <% if (k.active) { %>
+        <a href="/admin/chat?label=<%= encodeURIComponent(k.name) %>">Test</a>
+        <% } else { %>—<% } %>
+      </td>
       <td>
         <% if (k.active) { %>
         <form class="inline" method="POST" action="/admin/keys/revoke">

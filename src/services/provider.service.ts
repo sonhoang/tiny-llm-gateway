@@ -5,7 +5,7 @@ import { geminiProvider } from "../providers/gemini.provider";
 import { qwenProvider } from "../providers/qwen.provider";
 import { localProvider } from "../providers/local.provider";
 import { getProviderOrder } from "./router.service";
-import { pickProviderKey } from "./loadBalancer.service";
+import { pickProviderRequest } from "./loadBalancer.service";
 import { markKeyFailed } from "./keyManager.service";
 import { logger } from "../utils/logger";
 
@@ -31,18 +31,21 @@ export async function chatCompletion(body: ChatCompletionRequest): Promise<ChatC
   const order = getProviderOrder(body.model);
   let lastErr: unknown;
   for (const id of order) {
-    const apiKey = pickProviderKey(id);
-    if (apiKey === null) {
-      logger.warn(`provider skipped (no active key): ${id}`);
+    const pick = pickProviderRequest(id);
+    if (pick === null) {
+      logger.warn(`provider skipped (no active key / no local URL): ${id}`);
       continue;
     }
     try {
       const provider = registry[id];
-      return await provider.chat({ apiKey, model: body.model }, body);
+      return await provider.chat(
+        { apiKey: pick.apiKey, model: body.model, baseURL: pick.baseURL },
+        body
+      );
     } catch (e) {
       lastErr = e;
       logger.warn(`provider failed: ${id}`, e instanceof Error ? e.message : e);
-      if (apiKey && shouldRetireKey(e)) markKeyFailed(id, apiKey);
+      if (shouldRetireKey(e)) markKeyFailed(id, pick.apiKey, pick.baseURL, pick.entryId);
     }
   }
   const message =

@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>LLM Gateway — Provider keys (BYOK)</title>
+  <style>
+    body { font-family: sans-serif; max-width: 1100px; margin: 0 auto; padding: 24px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 28px; }
+    th, td { padding: 8px 10px; border: 1px solid #ddd; text-align: left; vertical-align: top; }
+    th { background: #f0f0f0; font-size: 13px; }
+    form.inline { display: inline; margin-right: 6px; }
+    input[type=text], input[type=number] { padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; max-width: 100%; box-sizing: border-box; }
+    button, .btn { padding: 5px 12px; border-radius: 4px; border: none; cursor: pointer; font-size: 13px; }
+    .btn-save { background: #1a1a2e; color: white; }
+    .btn-del { background: #c0392b; color: white; }
+    .btn-soft { background: #ecf0f1; color: #333; }
+    nav a { margin-right: 16px; color: #555; }
+    h2 { margin-top: 32px; border-bottom: 2px solid #1a1a2e; padding-bottom: 6px; }
+    .hint { color: #666; font-size: 13px; margin-bottom: 12px; }
+    .mono { font-family: ui-monospace, monospace; font-size: 12px; word-break: break-all; }
+    .add-box { background: #f9f9f9; padding: 16px; border-radius: 8px; margin-bottom: 24px; }
+    .add-box label { display: block; margin-top: 8px; font-size: 13px; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
+    .pill-on { background: #d4edda; color: #155724; }
+    .pill-warn { background: #fff3cd; color: #856404; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="/admin">Dashboard</a>
+    <a href="/admin/providers">Providers (BYOK)</a>
+    <a href="/admin/chat">Test LLM</a>
+    <a href="/admin/logs">Logs</a>
+    <a href="/admin/logout">Logout</a>
+  </nav>
+  <h1>Provider keys (BYOK)</h1>
+  <p class="hint">Manage upstream credentials here. Lower <strong>priority</strong> numbers are tried first. Disable rows without deleting them. Keys are stored encrypted in <code>data/provider_keys.enc</code>.</p>
+
+  <% sections.forEach(function (sec) { %>
+    <h2><%= sec.label %></h2>
+    <table>
+      <tr>
+        <th>Prio</th>
+        <th>On</th>
+        <th>Key (masked)</th>
+        <% if (sec.showBase) { %><th>OpenAI-compatible URL</th><% } %>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+      <% sec.rows.forEach(function (row) { %>
+      <tr>
+        <td>
+          <form class="inline" method="POST" action="/admin/providers/priority">
+            <input type="hidden" name="provider" value="<%= sec.provider %>" />
+            <input type="hidden" name="id" value="<%= row.id %>" />
+            <input type="number" name="priority" value="<%= row.priority %>" style="width:64px" />
+            <button class="btn btn-save" type="submit">Set</button>
+          </form>
+        </td>
+        <td>
+          <form class="inline" method="POST" action="/admin/providers/toggle">
+            <input type="hidden" name="provider" value="<%= sec.provider %>" />
+            <input type="hidden" name="id" value="<%= row.id %>" />
+            <input type="hidden" name="enabled" value="<%= row.enabled ? 'false' : 'true' %>" />
+            <button class="btn <%= row.enabled ? 'btn-soft' : 'btn-save' %>" type="submit"><%= row.enabled ? 'Disable' : 'Enable' %></button>
+          </form>
+        </td>
+        <td class="mono"><%= row.keyMasked %></td>
+        <% if (sec.showBase) { %>
+        <td class="mono"><%= row.baseURL || '— (uses LOCAL_LLM_URL)' %></td>
+        <% } %>
+        <td>
+          <% if (!row.enabled) { %><span class="pill pill-warn">Disabled</span><% } %>
+          <% else if (row.exhausted) { %><span class="pill pill-warn">Auto-paused (401/403/429)</span><% } %>
+          <% else { %><span class="pill pill-on">OK</span><% } %>
+        </td>
+        <td>
+          <% if (row.exhausted) { %>
+          <form class="inline" method="POST" action="/admin/providers/reactivate">
+            <input type="hidden" name="provider" value="<%= sec.provider %>" />
+            <input type="hidden" name="id" value="<%= row.id %>" />
+            <button class="btn btn-soft" type="submit">Clear auto-pause</button>
+          </form>
+          <% } %>
+          <form class="inline" method="POST" action="/admin/providers/delete" onsubmit="return confirm('Delete this row?');">
+            <input type="hidden" name="provider" value="<%= sec.provider %>" />
+            <input type="hidden" name="id" value="<%= row.id %>" />
+            <button class="btn btn-del" type="submit">Delete</button>
+          </form>
+          <div style="margin-top:8px">
+            <form method="POST" action="/admin/providers/rotate-key" style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+              <input type="hidden" name="provider" value="<%= sec.provider %>" />
+              <input type="hidden" name="id" value="<%= row.id %>" />
+              <input type="text" name="newKey" placeholder="New API key (replace)" style="flex:1; min-width:140px" />
+              <button class="btn btn-save" type="submit">Rotate key</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+      <% }); %>
+    </table>
+
+    <div class="add-box">
+      <strong>Add <%= sec.label %> entry</strong>
+      <form method="POST" action="/admin/providers/add" style="margin-top:10px">
+        <input type="hidden" name="provider" value="<%= sec.provider %>" />
+        <label>API key <% if (sec.provider === 'local') { %>(optional if URL-only / Ollama)<% } %></label>
+        <input type="text" name="key" style="width:100%; max-width:480px" placeholder="<%= sec.provider === 'local' ? 'Bearer token or leave empty' : 'Required' %>" />
+        <% if (sec.showBase) { %>
+        <label>OpenAI-compatible base URL (optional — uses env default if empty)</label>
+        <input type="text" name="baseURL" style="width:100%; max-width:560px" placeholder="https://host:port/v1" />
+        <% } %>
+        <label>Priority (optional, default: after last)</label>
+        <input type="number" name="priority" placeholder="e.g. 0 = first" style="width:120px" />
+        <div style="margin-top:10px">
+          <button class="btn btn-save" type="submit">Add</button>
+        </div>
+      </form>
+    </div>
+  <% }); %>
+
+</body>
+</html>

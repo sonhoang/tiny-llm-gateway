@@ -8,6 +8,16 @@ import {
   apiRevokeKey,
   logsPage
 } from "../controllers/admin.controller";
+import {
+  providersPage,
+  providersAdd,
+  providersToggle,
+  providersPriority,
+  providersDelete,
+  providersReactivate,
+  providersRotateKey
+} from "../controllers/adminProviders.controller";
+import { chatPage, chatTestApi } from "../controllers/adminChat.controller";
 import { adminAuthMiddleware } from "../middlewares/adminAuth.middleware";
 
 const router = Router();
@@ -20,5 +30,16 @@ router.get("/", adminAuthMiddleware, dashboard);
 router.get("/logs", adminAuthMiddleware, logsPage);
 router.post("/keys/create", adminAuthMiddleware, apiCreateKey);
 router.post("/keys/revoke", adminAuthMiddleware, apiRevokeKey);
+
+router.get("/providers", adminAuthMiddleware, providersPage);
+router.post("/providers/add", adminAuthMiddleware, providersAdd);
+router.post("/providers/toggle", adminAuthMiddleware, providersToggle);
+router.post("/providers/priority", adminAuthMiddleware, providersPriority);
+router.post("/providers/delete", adminAuthMiddleware, providersDelete);
+router.post("/providers/reactivate", adminAuthMiddleware, providersReactivate);
+router.post("/providers/rotate-key", adminAuthMiddleware, providersRotateKey);
+
+router.get("/chat", adminAuthMiddleware, chatPage);
+router.post("/api/chat-test", adminAuthMiddleware, chatTestApi);
 
 export default router;
