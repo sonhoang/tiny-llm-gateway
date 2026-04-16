@@ -1,9 +1,10 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>LLM Gateway — Provider keys (BYOK)</title>
+  <meta charset="utf-8" />
+  <title>LLM Gateway - Provider keys (BYOK)</title>
   <style>
-    body { font-family: sans-serif; max-width: 1100px; margin: 0 auto; padding: 24px; }
+    body { font-family: sans-serif; max-width: 1200px; margin: 0 auto; padding: 24px; }
     table { width: 100%; border-collapse: collapse; margin-bottom: 28px; }
     th, td { padding: 8px 10px; border: 1px solid #ddd; text-align: left; vertical-align: top; }
     th { background: #f0f0f0; font-size: 13px; }
@@ -22,6 +23,7 @@
     .pill { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; }
     .pill-on { background: #d4edda; color: #155724; }
     .pill-warn { background: #fff3cd; color: #856404; }
+    .meta-form input[type=text] { max-width: 220px; }
   </style>
 </head>
 <body>
@@ -33,20 +35,23 @@
     <a href="/admin/logout">Logout</a>
   </nav>
   <h1>Provider keys (BYOK)</h1>
-  <p class="hint">Manage upstream credentials here. Lower <strong>priority</strong> numbers are tried first. Disable rows without deleting them. Keys are stored encrypted in <code>data/provider_keys.enc</code>.</p>
+  <p class="hint">Each row stores the upstream <strong>model</strong> id (required when adding). API default is <code>auto</code> (omit <code>model</code>, empty, or literal <code>auto</code>): the gateway tries <strong>all</strong> rows in <strong>priority</strong> order. If the client sets <code>model</code> to anything else, <strong>only</strong> rows with that exact configured model are used (priority fallback among them); if none match, the gateway returns an error. The name <code>auto</code> is reserved. Keys: <code>data/provider_keys.enc</code>.</p>
 
-  <% sections.forEach(function (sec) { %>
+  <% var _sections = typeof sections !== "undefined" && sections ? sections : []; %>
+  <% for (var si = 0; si < _sections.length; si++) { %>
+  <% var sec = _sections[si]; %>
     <h2><%= sec.label %></h2>
     <table>
       <tr>
         <th>Prio</th>
         <th>On</th>
-        <th>Key (masked)</th>
-        <% if (sec.showBase) { %><th>OpenAI-compatible URL</th><% } %>
+        <th>API key</th>
+        <th>Model &amp; host</th>
         <th>Status</th>
         <th>Actions</th>
       </tr>
-      <% sec.rows.forEach(function (row) { %>
+      <% for (var ri = 0; ri < sec.rows.length; ri++) { %>
+      <% var row = sec.rows[ri]; %>
       <tr>
         <td>
           <form class="inline" method="POST" action="/admin/providers/priority">
@@ -65,13 +70,23 @@
           </form>
         </td>
         <td class="mono"><%= row.keyMasked %></td>
-        <% if (sec.showBase) { %>
-        <td class="mono"><%= row.baseURL || '— (uses LOCAL_LLM_URL)' %></td>
-        <% } %>
         <td>
-          <% if (!row.enabled) { %><span class="pill pill-warn">Disabled</span><% } %>
-          <% else if (row.exhausted) { %><span class="pill pill-warn">Auto-paused (401/403/429)</span><% } %>
-          <% else { %><span class="pill pill-on">OK</span><% } %>
+          <form class="meta-form" method="POST" action="/admin/providers/update-meta" style="display:flex;flex-direction:column;gap:6px;align-items:flex-start;">
+            <input type="hidden" name="provider" value="<%= sec.provider %>" />
+            <input type="hidden" name="id" value="<%= row.id %>" />
+            <input type="text" name="model" value="<%= row.model %>" title="Client + upstream model id" placeholder="model id" style="width:min(100%,280px)" />
+            <input type="text" name="host" value="<%= row.host || '' %>" placeholder="host (optional — Google / Ollama default if empty)" title="API base URL" style="width:min(100%,400px)" />
+            <button class="btn btn-save" type="submit">Save model &amp; host</button>
+          </form>
+        </td>
+        <td>
+          <% if (row.enabled === false) { %>
+          <span class="pill pill-warn">Disabled</span>
+          <% } else if (row.exhausted) { %>
+          <span class="pill pill-warn">Auto-paused (401/403/429)</span>
+          <% } else { %>
+          <span class="pill pill-on">OK</span>
+          <% } %>
         </td>
         <td>
           <% if (row.exhausted) { %>
@@ -90,33 +105,33 @@
             <form method="POST" action="/admin/providers/rotate-key" style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
               <input type="hidden" name="provider" value="<%= sec.provider %>" />
               <input type="hidden" name="id" value="<%= row.id %>" />
-              <input type="text" name="newKey" placeholder="New API key (replace)" style="flex:1; min-width:140px" />
+              <input type="text" name="newKey" placeholder="Rotate API key" style="flex:1; min-width:140px" />
               <button class="btn btn-save" type="submit">Rotate key</button>
             </form>
           </div>
         </td>
       </tr>
-      <% }); %>
+      <% } %>
     </table>
 
     <div class="add-box">
-      <strong>Add <%= sec.label %> entry</strong>
+      <strong>Add <%= sec.label %> row</strong>
       <form method="POST" action="/admin/providers/add" style="margin-top:10px">
         <input type="hidden" name="provider" value="<%= sec.provider %>" />
-        <label>API key <% if (sec.provider === 'local') { %>(optional if URL-only / Ollama)<% } %></label>
-        <input type="text" name="key" style="width:100%; max-width:480px" placeholder="<%= sec.provider === 'local' ? 'Bearer token or leave empty' : 'Required' %>" />
-        <% if (sec.showBase) { %>
-        <label>OpenAI-compatible base URL (optional — uses env default if empty)</label>
-        <input type="text" name="baseURL" style="width:100%; max-width:560px" placeholder="https://host:port/v1" />
-        <% } %>
-        <label>Priority (optional, default: after last)</label>
-        <input type="number" name="priority" placeholder="e.g. 0 = first" style="width:120px" />
+        <label>API key <% if (sec.provider === "local") { %>(optional if host-only / no Bearer)<% } else { %>(required)<% } %></label>
+        <input type="text" name="key" style="width:100%; max-width:480px" placeholder="<%= sec.provider === 'local' ? 'Bearer or empty' : 'Google AI key' %>" />
+        <label>Model (upstream id; also used when the client sends <code>model</code> to select this row)</label>
+        <input type="text" name="model" style="width:100%; max-width:480px" placeholder="<%= sec.provider === 'gemini' ? 'gemini-1.5-flash' : 'llama3' %>" required />
+        <label>Host (API base — optional)</label>
+        <input type="text" name="host" style="width:100%; max-width:560px" placeholder="<%= sec.provider === 'gemini' ? 'https://generativelanguage.googleapis.com' : 'http://127.0.0.1:11434/v1' %>" />
+        <label>Priority (optional; lower = tried first among same model)</label>
+        <input type="number" name="priority" placeholder="e.g. 0" style="width:120px" />
         <div style="margin-top:10px">
           <button class="btn btn-save" type="submit">Add</button>
         </div>
       </form>
     </div>
-  <% }); %>
+  <% } %>
 
 </body>
 </html>

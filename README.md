@@ -1,6 +1,6 @@
 # Tiny LLM Gateway
 
-OpenAI-compatible gateway with multi-provider routing (Gemini, Qwen, local), admin login, encrypted API key storage, and Docker support.
+OpenAI-compatible gateway with **Google Gemini** and **custom OpenAI-compatible** upstreams, admin login, encrypted provider configuration, and Docker support.
 
 ## Quickstart
 
@@ -14,9 +14,24 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:4000/admin`, create a **gateway client** key, manage **upstream** credentials under **Providers (BYOK)** (Gemini, Qwen, local/OpenAI-compatible URLs with optional API keys, priority, enable/disable), and use **Test LLM** to verify routing. Then:
+Configure **only** `.env` (admin login, session, encryption key, port). In **Admin → Providers**, each row needs **API key**, **model** (upstream id, required when adding), **host** (optional), and **priority** (lower = earlier in the failover chain).
+
+**Public API — `model`:**
+
+- **Default:** omit `model`, send an empty string, or send **`"auto"`** (case-insensitive). The gateway tries **every** eligible row in **priority** order (Gemini and OpenAI-compatible merged) until one succeeds.
+- **Pinned:** any other `model` string uses **only** rows whose configured model matches exactly, in priority order. If **no** row has that model, the gateway returns **400** (no silent fallback to other models).
+- The literal **`auto`** is reserved for this routing mode; use it when a client must send an explicit field.
+
+Gateway **client** keys are created on the dashboard. On **Test LLM**, paste a `sk-gw-…` key (optional: stored in the browser’s `localStorage` after a successful request).
 
 ```bash
+# Auto routing (omit model or use "auto")
+curl http://localhost:4000/v1/chat/completions \
+  -H "Authorization: Bearer sk-gw-..." \
+  -H "Content-Type: application/json" \
+  -d '{"model":"auto","messages":[{"role":"user","content":"Hello!"}]}'
+
+# Pin to one configured model id (errors if no row has this model)
 curl http://localhost:4000/v1/chat/completions \
   -H "Authorization: Bearer sk-gw-..." \
   -H "Content-Type: application/json" \
@@ -29,17 +44,15 @@ curl http://localhost:4000/v1/chat/completions \
 docker compose up --build
 ```
 
-Mount `./data` for encrypted `*.enc` files.
+Mount `./data` for encrypted files (`provider_keys.enc`, gateway key store, etc.).
 
-## Local / custom OpenAI-compatible backends
+## Custom OpenAI-compatible backends
 
-The **`local`** provider talks to any server that implements `POST .../v1/chat/completions` (Ollama, LM Studio, vLLM, LiteLLM, your own gateway, etc.).
+Any server that implements `POST .../v1/chat/completions` (Ollama, LM Studio, vLLM, etc.). Set **host** to `https://host`, `https://host/v1`, or a full `.../v1/chat/completions` path — the gateway normalizes it. Empty **host** defaults to `http://127.0.0.1:11434/v1`. The **model** on the row is sent upstream as the OpenAI `model` field.
 
-- **`LOCAL_LLM_URL`** — default base URL for all **`LOCAL_API_KEYS`** entries. You can set `https://host`, `https://host/v1`, or a full `.../v1/chat/completions` path; the gateway normalizes it.
-- **`LOCAL_API_KEYS`** — comma-separated **Bearer** tokens for that URL (optional; leave empty for no `Authorization` header, e.g. Ollama).
-- **`LOCAL_PROVIDER_ENDPOINTS`** — optional. Comma-separated **`url|apikey`** pairs so each backend can have its **own** URL and key, e.g. `http://localhost:1234/v1|sk-a,https://other/v1|sk-b`. Use `https://host/v1` alone (no `|`) for no key. If set, it seeds the encrypted store instead of `LOCAL_API_KEYS` + `LOCAL_LLM_URL` for local rows.
+## Gemini
 
-Provider keys are still persisted in **`data/provider_keys.enc`** after the first run; update `.env` and reset or edit via a fresh deploy as needed.
+**Host** defaults to Google’s Generative Language API root if omitted. **Model** should be the Google model id (e.g. `gemini-1.5-flash`).
 
 ## Security
 

@@ -1,12 +1,13 @@
 import type { ChatCompletionRequest, ChatCompletionResponse } from "./openai";
 
-export type ProviderId = "gemini" | "qwen" | "local";
+export type ProviderId = "gemini" | "local";
 
 export interface ProviderContext {
   apiKey: string;
+  /** Upstream model id for this row (matches client `model`). */
   model: string;
-  /** OpenAI-compatible API root for `local` when using per-endpoint keys (optional). */
-  baseURL?: string;
+  /** API root: Gemini Generative Language host, or OpenAI-compatible base URL. */
+  host?: string;
 }
 
 export interface LLMProvider {

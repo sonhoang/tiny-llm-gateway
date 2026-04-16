@@ -1,18 +1,26 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>LLM Gateway — Test chat</title>
+  <meta charset="utf-8" />
+  <title>LLM Gateway - Test chat</title>
   <style>
     body { font-family: sans-serif; max-width: 720px; margin: 0 auto; padding: 24px; }
     nav a { margin-right: 16px; color: #555; }
     label { display: block; margin-top: 12px; font-size: 14px; }
-    input[type=text], textarea { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
+    input[type=text], input[type=password], textarea { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
     textarea { min-height: 120px; resize: vertical; }
     button { margin-top: 12px; padding: 10px 20px; background: #1a1a2e; color: white; border: none; border-radius: 6px; cursor: pointer; }
     button:disabled { opacity: 0.6; cursor: wait; }
     #out { margin-top: 20px; padding: 16px; background: #f5f5f5; border-radius: 8px; white-space: pre-wrap; word-break: break-word; min-height: 60px; }
     .err { color: #c0392b; }
     .hint { color: #666; font-size: 13px; margin-top: 8px; }
+    .ok { color: #155724; font-size: 13px; }
+    .endpoint-box { background: #f0f4f8; padding: 16px; border-radius: 8px; margin: 20px 0; border: 1px solid #c5d3e0; }
+    .endpoint-box h2 { margin: 0 0 10px; font-size: 16px; }
+    .endpoint-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0; }
+    .endpoint-row code { flex: 1; min-width: 200px; padding: 8px 10px; background: #fff; border: 1px solid #ccc; border-radius: 4px; font-size: 13px; word-break: break-all; }
+    .btn-copy { padding: 6px 12px; font-size: 13px; background: #ecf0f1; border: 1px solid #bdc3c7; border-radius: 4px; cursor: pointer; }
+    .btn-copy:hover { background: #dfe6e9; }
   </style>
 </head>
 <body>
@@ -24,11 +32,31 @@
     <a href="/admin/logout">Logout</a>
   </nav>
   <h1>Test LLM (admin)</h1>
-  <% if (label) { %><p class="hint">Context: <strong><%= label %></strong> (same routing as <code>/v1/chat/completions</code>)</p><% } %>
-  <p class="hint">Uses your configured provider keys and priorities. No gateway API key required (session only).</p>
+  <% if (label) { %><p class="hint">Context: <strong><%= label %></strong> — same stack as <code>POST /v1/chat/completions</code> (gateway key + provider routing).</p><% } %>
+
+  <div class="endpoint-box">
+    <h2>OpenAI-compatible endpoint (paste into another client)</h2>
+    <p class="hint" style="margin-top:0">URLs reflect how you opened this page (fix host/protocol if you use Docker or a tunnel).</p>
+    <p class="hint" style="margin-bottom:4px"><strong>Base URL</strong> — use in tools that ask for “OpenAI API base” / custom endpoint (path <code>/v1/...</code> is appended automatically):</p>
+    <div class="endpoint-row">
+      <code id="url-base"><%= openaiBaseUrl %></code>
+      <button type="button" class="btn-copy" data-copy-target="url-base">Copy</button>
+    </div>
+    <p class="hint" style="margin-bottom:4px"><strong>Full chat completions URL</strong> — for curl or apps that want the exact path:</p>
+    <div class="endpoint-row">
+      <code id="url-chat"><%= chatCompletionsUrl %></code>
+      <button type="button" class="btn-copy" data-copy-target="url-chat">Copy</button>
+    </div>
+    <p class="hint" style="margin-bottom:0"><strong>Auth:</strong> <code>Authorization: Bearer &lt;sk-gw-…&gt;</code> (gateway key from Dashboard). <strong>Body:</strong> JSON with <code>messages</code>; optional <code>model</code> (<code>auto</code> or a model id from Providers).</p>
+  </div>
+
+  <p class="hint">Use a <strong>gateway</strong> client key (<code>sk-gw-…</code>) from the Dashboard — same <code>Authorization: Bearer</code> as public clients. After a successful send, the key is remembered in this browser only (<code>localStorage</code>), not on the server.</p>
+
+  <label for="gatewayKey">Gateway API key</label>
+  <input type="password" id="gatewayKey" autocomplete="off" placeholder="sk-gw-…" />
 
   <label for="model">Model</label>
-  <input type="text" id="model" value="gemini-1.5-flash" placeholder="e.g. gemini-1.5-flash, qwen-turbo, llama3" />
+  <input type="text" id="model" value="auto" placeholder="auto (default) or a model id from Providers" />
 
   <label for="message">Message</label>
   <textarea id="message" placeholder="Ask something…"></textarea>
@@ -38,13 +66,44 @@
   <div id="out" aria-live="polite"></div>
 
   <script>
-    const out = document.getElementById("out");
-    const send = document.getElementById("send");
+    document.querySelectorAll(".btn-copy").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var id = btn.getAttribute("data-copy-target");
+        var el = id ? document.getElementById(id) : null;
+        var text = el ? el.textContent.trim() : "";
+        if (!text) return;
+        var label = btn.textContent;
+        navigator.clipboard.writeText(text).then(
+          function () {
+            btn.textContent = "Copied";
+            setTimeout(function () { btn.textContent = label; }, 1600);
+          },
+          function () {
+            btn.textContent = "Copy failed";
+            setTimeout(function () { btn.textContent = label; }, 1600);
+          }
+        );
+      });
+    });
+    var LS_GATEWAY_KEY = "tiny_llm_gateway_admin_sk";
+    var out = document.getElementById("out");
+    var send = document.getElementById("send");
+    var keyInput = document.getElementById("gatewayKey");
+    try {
+      var saved = localStorage.getItem(LS_GATEWAY_KEY);
+      if (saved && keyInput) keyInput.value = saved;
+    } catch (e) {}
     send.addEventListener("click", async function () {
-      const model = document.getElementById("model").value.trim() || "gemini-1.5-flash";
-      const message = document.getElementById("message").value.trim();
+      var modelRaw = document.getElementById("model").value.trim();
+      var message = document.getElementById("message").value.trim();
+      var auth = keyInput && keyInput.value ? keyInput.value.trim() : "";
       if (!message) {
         out.textContent = "Enter a message.";
+        out.className = "err";
+        return;
+      }
+      if (!auth) {
+        out.textContent = "Gateway API key required — create one on the Dashboard and paste sk-gw-… above.";
         out.className = "err";
         return;
       }
@@ -52,17 +111,28 @@
       out.className = "";
       out.textContent = "…";
       try {
-        const res = await fetch("/admin/api/chat-test", {
+        var res = await fetch("/admin/api/chat-test", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model, message })
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + auth
+          },
+          body: JSON.stringify(
+            Object.assign(
+              { message: message },
+              modelRaw && modelRaw.toLowerCase() !== "auto" ? { model: modelRaw } : { model: "auto" }
+            )
+          )
         });
-        const data = await res.json().catch(function () { return {}; });
+        var data = await res.json().catch(function () { return {}; });
         if (!res.ok) {
           out.className = "err";
           out.textContent = data.error || res.statusText || "Request failed";
           return;
         }
+        try {
+          localStorage.setItem(LS_GATEWAY_KEY, auth);
+        } catch (e) {}
         out.textContent = (data.model ? "[" + data.model + "]\n\n" : "") + (data.reply || "");
       } catch (e) {
         out.className = "err";

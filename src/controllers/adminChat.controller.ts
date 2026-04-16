@@ -1,13 +1,27 @@
 import { Request, Response } from "express";
 import { chatCompletion } from "../services/provider.service";
 
+function publicOrigin(req: Request): string {
+  const xfProto = (req.headers["x-forwarded-proto"] as string | undefined)?.split(",")[0]?.trim();
+  const proto = xfProto || req.protocol || "http";
+  const host = (req.headers["x-forwarded-host"] as string | undefined)?.split(",")[0]?.trim() || req.get("host") || "localhost:4000";
+  return `${proto}://${host}`;
+}
+
 export function chatPage(req: Request, res: Response): void {
   const label = typeof req.query.label === "string" ? req.query.label : "";
-  res.render("chat", { label });
+  const origin = publicOrigin(req);
+  const openaiBaseUrl = `${origin}/v1`;
+  const chatCompletionsUrl = `${origin}/v1/chat/completions`;
+  res.render("chat", { label, openaiBaseUrl, chatCompletionsUrl });
 }
 
 export async function chatTestApi(req: Request, res: Response): Promise<void> {
-  const model = String(req.body?.model || "gemini-1.5-flash").trim();
+  const modelRaw = req.body?.model;
+  const model =
+    modelRaw !== undefined && modelRaw !== null && String(modelRaw).trim() !== ""
+      ? String(modelRaw).trim()
+      : undefined;
   const message = String(req.body?.message || "").trim();
   if (!message) {
     res.status(400).json({ error: "message required" });
@@ -15,7 +29,7 @@ export async function chatTestApi(req: Request, res: Response): Promise<void> {
   }
   try {
     const out = await chatCompletion({
-      model,
+      ...(model ? { model } : {}),
       messages: [{ role: "user", content: message }]
     });
     const reply = out.choices?.[0]?.message?.content ?? "";

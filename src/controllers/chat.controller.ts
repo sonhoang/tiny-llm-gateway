@@ -10,11 +10,7 @@ export async function handleChat(req: Request, res: Response, next: NextFunction
       res.status(400).json({ error: "messages required" });
       return;
     }
-    if (!body.model) {
-      res.status(400).json({ error: "model required" });
-      return;
-    }
-    logger.info("chat completion", { model: body.model });
+    logger.info("chat completion", { model: body.model?.trim() || "auto" });
     const out = await chatCompletion(body);
     res.json(out);
   } catch (e) {

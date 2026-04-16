@@ -11,7 +11,7 @@ export function completionFromAssistant(
     id: "chatcmpl-" + crypto.randomBytes(12).toString("hex"),
     object: "chat.completion",
     created: now,
-    model: modelOverride || req.model,
+    model: modelOverride ?? req.model ?? "",
     choices: [
       {
         index: 0,

@@ -1,6 +1,7 @@
 import axios from "axios";
 import type { ChatCompletionRequest, ChatCompletionResponse } from "../types/openai";
 import type { LLMProvider, ProviderContext } from "../types/provider";
+import { effectiveResponseModel } from "../services/modelRouting";
 
 /** Build OpenAI-compatible chat/completions URL from any reasonable base. */
 function chatCompletionsUrl(baseURL: string): string {
@@ -10,11 +11,10 @@ function chatCompletionsUrl(baseURL: string): string {
   return `${t}/v1/chat/completions`;
 }
 
+const DEFAULT_LOCAL_HOST = "http://127.0.0.1:11434/v1";
+
 function resolveOpenAiRoot(ctx: ProviderContext): string {
-  const raw =
-    (ctx.baseURL && ctx.baseURL.trim()) ||
-    (process.env.LOCAL_LLM_URL || "").trim() ||
-    "http://127.0.0.1:11434/v1";
+  const raw = (ctx.host && ctx.host.trim()) || DEFAULT_LOCAL_HOST;
   return raw.replace(/\/$/, "");
 }
 
@@ -24,7 +24,7 @@ export const localProvider: LLMProvider = {
   async chat(ctx: ProviderContext, body: ChatCompletionRequest): Promise<ChatCompletionResponse> {
     const url = chatCompletionsUrl(resolveOpenAiRoot(ctx));
     const openaiBody = {
-      model: body.model,
+      model: ctx.model,
       messages: body.messages,
       temperature: body.temperature,
       max_tokens: body.max_tokens,
@@ -40,11 +40,11 @@ export const localProvider: LLMProvider = {
     if (res.status >= 400) {
       const msg =
         (res.data as unknown as { error?: { message?: string } })?.error?.message ||
-        `Local LLM HTTP ${res.status}`;
+        `OpenAI-compatible HTTP ${res.status}`;
       const err = new Error(msg) as Error & { status?: number };
       err.status = res.status;
       throw err;
     }
-    return res.data;
+    return { ...res.data, model: effectiveResponseModel(body.model, ctx.model) };
   }
 };

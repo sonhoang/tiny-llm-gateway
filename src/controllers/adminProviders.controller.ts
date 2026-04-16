@@ -10,7 +10,7 @@ import {
 } from "../services/keyManager.service";
 
 function isProvider(s: string): s is ProviderName {
-  return s === "gemini" || s === "qwen" || s === "local";
+  return s === "gemini" || s === "local";
 }
 
 function viewRows(provider: ProviderName) {
@@ -21,22 +21,11 @@ function viewRows(provider: ProviderName) {
 }
 
 export function providersPage(_req: Request, res: Response): void {
-  const sections: Array<{
-    provider: ProviderName;
-    label: string;
-    showBase: boolean;
-    rows: ReturnType<typeof viewRows>;
-  }> = [
-    { provider: "gemini", label: "Google Gemini", showBase: false, rows: viewRows("gemini") },
-    { provider: "qwen", label: "Qwen (OpenAI-compatible)", showBase: false, rows: viewRows("qwen") },
-    {
-      provider: "local",
-      label: "Local / custom OpenAI-compatible",
-      showBase: true,
-      rows: viewRows("local")
-    }
+  const sections = [
+    { provider: "gemini" as const, label: "Google Gemini", rows: viewRows("gemini") },
+    { provider: "local" as const, label: "Custom OpenAI-compatible", rows: viewRows("local") }
   ];
-  res.render("providers", { sections });
+  res.render("providers", { sections: sections || [] });
 }
 
 export function providersAdd(req: Request, res: Response): void {
@@ -46,26 +35,42 @@ export function providersAdd(req: Request, res: Response): void {
     return;
   }
   const key = String(req.body?.key || "").trim();
-  const baseURL = String(req.body?.baseURL || "").trim();
+  const model = String(req.body?.model || "").trim();
+  const host = String(req.body?.host || "").trim();
   const priorityRaw = req.body?.priority;
   const priority =
     priorityRaw !== undefined && priorityRaw !== "" ? Number(priorityRaw) : undefined;
-  if (p !== "local" && !key) {
+  if (!model) {
+    res.redirect("/admin/providers?err=model");
+    return;
+  }
+  if (p === "gemini" && !key) {
     res.redirect("/admin/providers?err=key");
     return;
   }
-  if (p === "local") {
-    const hasFallbackUrl = Boolean((process.env.LOCAL_LLM_URL || "").trim());
-    if (!key && !baseURL && !hasFallbackUrl) {
-      res.redirect("/admin/providers?err=local");
-      return;
-    }
+  if (p === "local" && !key && !host) {
+    res.redirect("/admin/providers?err=local");
+    return;
   }
   addProviderEntry(p, {
     key,
-    baseURL: p === "local" ? baseURL || undefined : undefined,
+    model,
+    host: host || undefined,
     priority: Number.isFinite(priority) ? priority : undefined
   });
+  res.redirect("/admin/providers");
+}
+
+export function providersUpdateMeta(req: Request, res: Response): void {
+  const p = String(req.body?.provider || "");
+  const id = String(req.body?.id || "");
+  const model = String(req.body?.model || "").trim();
+  const host = String(req.body?.host || "").trim();
+  if (!isProvider(p) || !id || !model) {
+    res.redirect("/admin/providers?err=model");
+    return;
+  }
+  updateProviderEntry(p, id, { model, host: host || null });
   res.redirect("/admin/providers");
 }
 

@@ -1,45 +1,21 @@
 import type { ProviderId } from "../types/provider";
-import { listActiveKeys, listEligibleEntries } from "./keyManager.service";
-
-const counters: Record<string, number> = {};
-
-export type ProviderPick = { apiKey: string; baseURL?: string; entryId?: string };
+import type { KeyEntry } from "./keyManager.service";
+import { listEligibleEntries } from "./keyManager.service";
+import type { ModelRouting } from "./modelRouting";
 
 /**
- * Legacy: round-robin key strings (tests / old code paths).
+ * Merges eligible Gemini and OpenAI-compatible rows, sorted by priority (then id).
+ * - `auto`: every eligible row (gateway failover by priority).
+ * - `pinned`: only rows whose configured `model` equals the pinned id (failover among those only).
  */
-export function pickProviderKey(provider: string): string | null {
-  if (provider === "local") {
-    const keys = listActiveKeys("local");
-    if (keys.length === 0) return "";
-  }
-  const keys = listActiveKeys(provider);
-  if (keys.length === 0) return null;
-  const idx = counters[`legacy_${provider}`] ?? 0;
-  counters[`legacy_${provider}`] = idx + 1;
-  return keys[idx % keys.length];
-}
-
-/**
- * Picks API key, optional base URL (local), and entry id for markKeyFailed.
- */
-export function pickProviderRequest(provider: ProviderId): ProviderPick | null {
-  if (provider === "local") {
-    const entries = listEligibleEntries("local");
-    if (entries.length === 0) {
-      const url = (process.env.LOCAL_LLM_URL || "").trim();
-      if (!url) return null;
-      return { apiKey: "" };
-    }
-    const idx = counters[provider] ?? 0;
-    counters[provider] = idx + 1;
-    const e = entries[idx % entries.length];
-    return { apiKey: e.key, baseURL: e.baseURL, entryId: e.id };
-  }
-  const entries = listEligibleEntries(provider);
-  if (entries.length === 0) return null;
-  const idx = counters[provider] ?? 0;
-  counters[provider] = idx + 1;
-  const e = entries[idx % entries.length];
-  return { apiKey: e.key, baseURL: e.baseURL, entryId: e.id };
+export function orderedFallbackCandidates(
+  routing: ModelRouting
+): Array<{ provider: ProviderId; entry: KeyEntry }> {
+  const match = (e: KeyEntry) =>
+    routing.kind === "auto" || (e.model || "").trim() === routing.model;
+  const gem = listEligibleEntries("gemini").filter(match).map(e => ({ provider: "gemini" as const, entry: e }));
+  const loc = listEligibleEntries("local").filter(match).map(e => ({ provider: "local" as const, entry: e }));
+  const merged = [...gem, ...loc];
+  merged.sort((a, b) => a.entry.priority - b.entry.priority || a.entry.id.localeCompare(b.entry.id));
+  return merged;
 }

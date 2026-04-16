@@ -3,7 +3,7 @@ import { saveEncrypted, loadEncrypted } from "./cryptoStore.service";
 
 const FILE = "provider_keys.enc";
 
-export type ProviderName = "gemini" | "qwen" | "local";
+export type ProviderName = "gemini" | "local";
 
 export interface KeyEntry {
   id: string;
@@ -13,8 +13,10 @@ export interface KeyEntry {
   enabled: boolean;
   /** Lower number = higher priority (tried first). */
   priority: number;
-  /** For `local` only: OpenAI-compatible base (e.g. https://host/v1). */
-  baseURL?: string;
+  /** Must match client `model` in chat requests; sent upstream. */
+  model: string;
+  /** Optional. Gemini: API root (default Google). Local: OpenAI-compatible base (default Ollama). */
+  host?: string;
 }
 
 export type KeyStore = Record<string, KeyEntry[]>;
@@ -30,69 +32,34 @@ function seedEntry(partial: Omit<KeyEntry, "id"> & { id?: string }, index: numbe
     exhausted: partial.exhausted ?? false,
     enabled: partial.enabled !== false,
     priority: partial.priority ?? index * 10,
-    baseURL: partial.baseURL
+    host: partial.host,
+    model: partial.model || ""
   };
-}
-
-/**
- * LOCAL_PROVIDER_ENDPOINTS: comma-separated `url|key` or `url` only.
- * Otherwise LOCAL_API_KEYS + LOCAL_LLM_URL.
- */
-function parseLocalKeyEntries(): KeyEntry[] {
-  const eps = (process.env.LOCAL_PROVIDER_ENDPOINTS || "")
-    .split(",")
-    .map(s => s.trim())
-    .filter(Boolean);
-  if (eps.length > 0) {
-    return eps.map((seg, i) => {
-      const pipe = seg.indexOf("|");
-      if (pipe === -1) {
-        return seedEntry(
-          { key: "", baseURL: seg.replace(/\/$/, ""), exhausted: false, enabled: true, priority: i * 10 },
-          i
-        );
-      }
-      return seedEntry(
-        {
-          baseURL: seg.slice(0, pipe).trim().replace(/\/$/, ""),
-          key: seg.slice(pipe + 1).trim(),
-          exhausted: false,
-          enabled: true,
-          priority: i * 10
-        },
-        i
-      );
-    });
-  }
-  const keys = (process.env.LOCAL_API_KEYS || "")
-    .split(",")
-    .map(s => s.trim())
-    .filter(Boolean);
-  return keys.map((key, i) =>
-    seedEntry({ key, exhausted: false, enabled: true, priority: i * 10 }, i)
-  );
 }
 
 function defaultStore(): KeyStore {
-  return {
-    gemini: (process.env.GEMINI_KEYS || "")
-      .split(",")
-      .filter(Boolean)
-      .map((k, i) => seedEntry({ key: k.trim(), exhausted: false, enabled: true, priority: i * 10 }, i)),
-    qwen: (process.env.QWEN_KEYS || "")
-      .split(",")
-      .filter(Boolean)
-      .map((k, i) => seedEntry({ key: k.trim(), exhausted: false, enabled: true, priority: i * 10 }, i)),
-    local: parseLocalKeyEntries()
-  };
+  return { gemini: [], local: [] };
 }
 
-function migrate(store: KeyStore): boolean {
+function migrate(store: KeyStore & { qwen?: KeyEntry[] }): boolean {
   let changed = false;
-  for (const prov of ["gemini", "qwen", "local"]) {
+  if (store.qwen) {
+    delete store.qwen;
+    changed = true;
+  }
+  for (const prov of ["gemini", "local"] as const) {
     const arr = store[prov] || [];
     arr.forEach((k, i) => {
-      const e = k as KeyEntry & { enabled?: boolean; priority?: number; id?: string };
+      const e = k as KeyEntry & { baseURL?: string };
+      if (e.baseURL && !e.host) {
+        e.host = e.baseURL;
+        delete e.baseURL;
+        changed = true;
+      }
+      if (!e.model || !String(e.model).trim()) {
+        e.model = prov === "gemini" ? "gemini-1.5-flash" : "llama3";
+        changed = true;
+      }
       if (!e.id) {
         e.id = newId();
         changed = true;
@@ -111,7 +78,7 @@ function migrate(store: KeyStore): boolean {
 }
 
 function load(): KeyStore {
-  const store = loadEncrypted<KeyStore>(FILE, defaultStore());
+  const store = loadEncrypted<KeyStore & { qwen?: KeyEntry[] }>(FILE, defaultStore());
   if (migrate(store)) save(store);
   return store;
 }
@@ -132,10 +99,6 @@ export function listActiveKeys(provider: string): string[] {
   return listEligibleEntries(provider).map(k => k.key);
 }
 
-export function listActiveLocalEntries(): KeyEntry[] {
-  return listEligibleEntries("local");
-}
-
 export function listAllEntriesForAdmin(provider: ProviderName): KeyEntry[] {
   const store = load();
   return [...(store[provider] || [])].sort((a, b) => a.priority - b.priority || a.id.localeCompare(b.id));
@@ -149,7 +112,7 @@ export function maskSecret(value: string): string {
 
 export function addProviderEntry(
   provider: ProviderName,
-  input: { key: string; baseURL?: string; priority?: number }
+  input: { key: string; model: string; host?: string; priority?: number }
 ): KeyEntry {
   const store = load();
   const list = store[provider] || [];
@@ -157,7 +120,8 @@ export function addProviderEntry(
   const entry = seedEntry(
     {
       key: input.key.trim(),
-      baseURL: input.baseURL?.trim() || undefined,
+      model: input.model.trim(),
+      host: input.host?.trim() || undefined,
       exhausted: false,
       enabled: true,
       priority: input.priority ?? maxP + 10
@@ -173,7 +137,13 @@ export function addProviderEntry(
 export function updateProviderEntry(
   provider: ProviderName,
   id: string,
-  patch: { enabled?: boolean; priority?: number; key?: string; baseURL?: string | null }
+  patch: {
+    enabled?: boolean;
+    priority?: number;
+    key?: string;
+    host?: string | null;
+    model?: string;
+  }
 ): boolean {
   const store = load();
   const list = store[provider] || [];
@@ -182,9 +152,10 @@ export function updateProviderEntry(
   if (patch.enabled !== undefined) found.enabled = patch.enabled;
   if (patch.priority !== undefined) found.priority = patch.priority;
   if (patch.key !== undefined && patch.key.trim() !== "") found.key = patch.key.trim();
-  if (patch.baseURL !== undefined) {
-    found.baseURL = patch.baseURL === null || patch.baseURL === "" ? undefined : patch.baseURL.trim();
+  if (patch.host !== undefined) {
+    found.host = patch.host === null || patch.host === "" ? undefined : patch.host.trim();
   }
+  if (patch.model !== undefined && patch.model.trim() !== "") found.model = patch.model.trim();
   save(store);
   return true;
 }
@@ -211,15 +182,15 @@ export function clearExhausted(provider: ProviderName, id: string): boolean {
 
 export function getAvailableKey(provider: string): string | null {
   const keys = listActiveKeys(provider);
-  if (provider === "local" && keys.length === 0) return "";
   return keys[0] ?? null;
 }
 
 export function markKeyFailed(
   provider: string,
   apiKey: string,
-  baseURL?: string,
-  entryId?: string
+  host: string | undefined,
+  entryId: string | undefined,
+  model: string | undefined
 ): void {
   const store = load();
   const list = store[provider] || [];
@@ -228,7 +199,8 @@ export function markKeyFailed(
     : list.find(k => {
         if (k.exhausted) return false;
         if (k.key !== apiKey) return false;
-        if (provider === "local") return (k.baseURL || "") === (baseURL || "");
+        if ((k.host || "") !== (host || "")) return false;
+        if ((k.model || "") !== (model || "")) return false;
         return true;
       });
   if (found) {

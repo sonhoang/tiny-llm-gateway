@@ -6,7 +6,11 @@ export interface ChatMessage {
 }
 
 export interface ChatCompletionRequest {
-  model: string;
+  /**
+   * Default / omit / `"auto"`: try all rows in priority order (Gemini + OpenAI-compatible merged).
+   * Any other value: only rows whose configured model matches; error if none match (no silent fallback to other models).
+   */
+  model?: string;
   messages: ChatMessage[];
   temperature?: number;
   max_tokens?: number;

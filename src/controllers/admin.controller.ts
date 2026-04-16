@@ -24,7 +24,11 @@ export function logout(req: Request, res: Response): void {
 export function dashboard(req: Request, res: Response): void {
   const newKey = req.session.pendingNewKey;
   req.session.pendingNewKey = undefined;
-  res.render("dashboard", { keys: listKeys(), newKey: newKey || null });
+  res.render("dashboard", {
+    keys: listKeys(),
+    newKey: newKey || null,
+    ec: encodeURIComponent
+  });
 }
 
 function wantsJson(req: Request): boolean {

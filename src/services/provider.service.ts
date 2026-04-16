@@ -2,16 +2,14 @@ import axios from "axios";
 import type { ChatCompletionRequest, ChatCompletionResponse } from "../types/openai";
 import type { LLMProvider, ProviderId } from "../types/provider";
 import { geminiProvider } from "../providers/gemini.provider";
-import { qwenProvider } from "../providers/qwen.provider";
 import { localProvider } from "../providers/local.provider";
-import { getProviderOrder } from "./router.service";
-import { pickProviderRequest } from "./loadBalancer.service";
+import { orderedFallbackCandidates } from "./loadBalancer.service";
+import { parseModelRouting } from "./modelRouting";
 import { markKeyFailed } from "./keyManager.service";
 import { logger } from "../utils/logger";
 
 const registry: Record<ProviderId, LLMProvider> = {
   gemini: geminiProvider,
-  qwen: qwenProvider,
   local: localProvider
 };
 
@@ -28,24 +26,35 @@ export async function chatCompletion(body: ChatCompletionRequest): Promise<ChatC
   if (body.stream) {
     throw Object.assign(new Error("Streaming not supported yet"), { status: 400 });
   }
-  const order = getProviderOrder(body.model);
-  let lastErr: unknown;
-  for (const id of order) {
-    const pick = pickProviderRequest(id);
-    if (pick === null) {
-      logger.warn(`provider skipped (no active key / no local URL): ${id}`);
-      continue;
+  const routing = parseModelRouting(body.model);
+  const candidates = orderedFallbackCandidates(routing);
+  if (candidates.length === 0) {
+    if (routing.kind === "pinned") {
+      throw Object.assign(
+        new Error(
+          `No provider row for model "${routing.model}". Add it under Admin → Providers, or use model "auto".`
+        ),
+        { status: 400 }
+      );
     }
+    throw Object.assign(
+      new Error("No eligible provider rows — add Gemini or OpenAI-compatible rows under Admin → Providers."),
+      { status: 400 }
+    );
+  }
+  let lastErr: unknown;
+  for (const { provider, entry } of candidates) {
     try {
-      const provider = registry[id];
-      return await provider.chat(
-        { apiKey: pick.apiKey, model: body.model, baseURL: pick.baseURL },
+      return await registry[provider].chat(
+        { apiKey: entry.key, model: entry.model, host: entry.host },
         body
       );
     } catch (e) {
       lastErr = e;
-      logger.warn(`provider failed: ${id}`, e instanceof Error ? e.message : e);
-      if (shouldRetireKey(e)) markKeyFailed(id, pick.apiKey, pick.baseURL, pick.entryId);
+      logger.warn(`provider failed: ${provider}`, e instanceof Error ? e.message : e);
+      if (shouldRetireKey(e)) {
+        markKeyFailed(provider, entry.key, entry.host, entry.id, entry.model);
+      }
     }
   }
   const message =

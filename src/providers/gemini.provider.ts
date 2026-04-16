@@ -2,13 +2,9 @@ import axios from "axios";
 import type { ChatCompletionRequest } from "../types/openai";
 import type { LLMProvider, ProviderContext } from "../types/provider";
 import { completionFromAssistant } from "./base.provider";
+import { effectiveResponseModel } from "../services/modelRouting";
 
-function mapModelId(requested: string): string {
-  const m = requested.toLowerCase();
-  if (m.includes("gemini-2") || m.includes("2.0")) return "gemini-2.0-flash";
-  if (m.includes("1.5-pro") || (m.includes("pro") && !m.includes("flash"))) return "gemini-1.5-pro";
-  return "gemini-1.5-flash";
-}
+const DEFAULT_GEMINI_HOST = "https://generativelanguage.googleapis.com";
 
 function buildGeminiPayload(body: ChatCompletionRequest) {
   const systemTexts: string[] = [];
@@ -38,8 +34,10 @@ export const geminiProvider: LLMProvider = {
   id: "gemini",
 
   async chat(ctx: ProviderContext, body: ChatCompletionRequest) {
-    const modelId = mapModelId(ctx.model || body.model);
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent`;
+    const base = (ctx.host && ctx.host.trim()) || DEFAULT_GEMINI_HOST;
+    const baseClean = base.replace(/\/$/, "");
+    const modelId = ctx.model.trim();
+    const url = `${baseClean}/v1beta/models/${encodeURIComponent(modelId)}:generateContent`;
     const payload = buildGeminiPayload(body);
     const res = await axios.post(`${url}?key=${encodeURIComponent(ctx.apiKey)}`, payload, {
       timeout: 120_000,
@@ -55,6 +53,6 @@ export const geminiProvider: LLMProvider = {
     const text =
       (res.data as { candidates?: { content?: { parts?: { text?: string }[] } }[] })?.candidates?.[0]
         ?.content?.parts?.[0]?.text ?? "";
-    return completionFromAssistant(body, text, body.model);
+    return completionFromAssistant(body, text, effectiveResponseModel(body.model, ctx.model));
   }
 };

@@ -1,7 +1,8 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <title>LLM Gateway — Dashboard</title>
+  <meta charset="utf-8" />
+  <title>LLM Gateway - Dashboard</title>
   <style>
     body { font-family: sans-serif; max-width: 900px; margin: 0 auto; padding: 24px; }
     table { width: 100%; border-collapse: collapse; }
@@ -53,7 +54,7 @@
       <td><%= k.active ? "✅ Active" : "❌ Revoked" %></td>
       <td>
         <% if (k.active) { %>
-        <a href="/admin/chat?label=<%= encodeURIComponent(k.name) %>">Test</a>
+        <a href="/admin/chat?label=<%= ec(k.name) %>">Test</a>
         <% } else { %>—<% } %>
       </td>
       <td>
