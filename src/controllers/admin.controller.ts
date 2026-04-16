@@ -58,7 +58,11 @@ export function apiRevokeKey(req: Request, res: Response): void {
 }
 
 export function logsPage(_req: Request, res: Response): void {
-  res.render("logs", { entries: logger.getRecent(), apiCalls: getApiCallLogs() });
+  res.render("logs", {
+    entries: logger.getRecent(),
+    apiCalls: getApiCallLogs(),
+    fmtJson: (o: unknown) => JSON.stringify(o ?? {}, null, 2)
+  });
 }
 
 export function apiCallLogsJson(_req: Request, res: Response): void {

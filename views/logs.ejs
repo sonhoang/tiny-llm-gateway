@@ -4,19 +4,51 @@
   <meta charset="utf-8" />
   <title>LLM Gateway — Logs</title>
   <style>
-    body { font-family: sans-serif; max-width: 1100px; margin: 0 auto; padding: 24px; }
+    body { font-family: system-ui, sans-serif; max-width: 1200px; margin: 0 auto; padding: 24px; background: #f4f4f5; }
     nav a { margin-right: 16px; color: #555; }
-    pre { background: #1a1a2e; color: #eee; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
+    pre.app-log { background: #1a1a2e; color: #eee; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.5; }
     .meta { color: #90caf9; }
+    h1 { margin-top: 0; }
     h2 { margin-top: 32px; border-bottom: 2px solid #1a1a2e; padding-bottom: 6px; }
-    table { width: 100%; border-collapse: collapse; font-size: 13px; }
-    th, td { padding: 8px 10px; border: 1px solid #ddd; text-align: left; vertical-align: top; }
-    th { background: #f0f0f0; }
+    table.summary { width: 100%; border-collapse: collapse; font-size: 13px; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    th, td { padding: 10px 12px; border-bottom: 1px solid #e8e8e8; text-align: left; vertical-align: top; }
+    th { background: #ececf1; font-weight: 600; }
+    tr:last-child td { border-bottom: none; }
     code { font-size: 12px; }
-    .ok { color: #155724; }
-    .bad { color: #c0392b; }
+    .ok { color: #155724; font-weight: 600; }
+    .bad { color: #c0392b; font-weight: 600; }
     .hint { color: #666; font-size: 13px; }
-    .mono { font-family: ui-monospace, monospace; font-size: 12px; }
+    .mono { font-family: ui-monospace, "Cascadia Code", monospace; font-size: 12px; }
+    /* LM Studio–style expandable JSON panels */
+    .detail-cell { padding: 0 !important; border-bottom: 1px solid #d0d0d7 !important; background: #e8e8ed; }
+    .lm-details { margin: 0; }
+    .lm-details > summary {
+      cursor: pointer; padding: 10px 14px; font-size: 13px; font-weight: 600;
+      color: #2d6a4f; background: linear-gradient(180deg, #d8f3dc 0%, #cce3d4 100%);
+      list-style: none; user-select: none;
+    }
+    .lm-details > summary::-webkit-details-marker { display: none; }
+    .lm-details > summary::before { content: "▸ "; }
+    .lm-details[open] > summary::before { content: "▾ "; }
+    .lm-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+      border-top: 1px solid #2b2b32;
+    }
+    @media (max-width: 900px) { .lm-grid { grid-template-columns: 1fr; } }
+    .lm-panel {
+      background: #252526; color: #d4d4d4; border-right: 1px solid #3c3c3c;
+      min-height: 120px;
+    }
+    .lm-panel:last-child { border-right: none; }
+    .lm-panel h4 {
+      margin: 0; padding: 8px 12px; font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.06em; color: #cccccc; background: #2d2d30; border-bottom: 1px solid #3c3c3c;
+    }
+    .lm-pre {
+      margin: 0; padding: 12px 14px; font-family: ui-monospace, "Cascadia Code", monospace;
+      font-size: 12px; line-height: 1.45; white-space: pre-wrap; word-break: break-word;
+      max-height: 420px; overflow: auto; color: #d4d4d4;
+    }
   </style>
 </head>
 <body>
@@ -30,12 +62,13 @@
   <h1>Logs</h1>
 
   <h2>API calls (last 50)</h2>
-  <p class="hint">Persisted to <code>data/api_calls.json</code>. JSON: <code>GET /admin/api/call-logs</code> (same admin session cookie).</p>
+  <p class="hint">Persisted to <code>data/api_calls.json</code>. JSON: <code>GET /admin/api/call-logs</code>. Expand a row for full request/response bodies (truncated for size).</p>
   <% var _calls = typeof apiCalls !== "undefined" && apiCalls ? apiCalls : []; %>
+  <% var _fmt = typeof fmtJson === "function" ? fmtJson : function (o) { return JSON.stringify(o || {}, null, 2); }; %>
   <% if (_calls.length === 0) { %>
   <p class="hint">No chat completions recorded yet.</p>
   <% } else { %>
-  <table>
+  <table class="summary">
     <tr>
       <th>Time</th>
       <th>Path</th>
@@ -57,13 +90,30 @@
       <td><%= c.responseModel || "—" %></td>
       <td><%= c.error || "—" %></td>
     </tr>
+    <tr>
+      <td colspan="8" class="detail-cell">
+        <details class="lm-details">
+          <summary>Request &amp; response details (OpenAI-style JSON)</summary>
+          <div class="lm-grid">
+            <section class="lm-panel">
+              <h4>Request</h4>
+              <pre class="lm-pre"><%- _fmt(c.requestDetail) %></pre>
+            </section>
+            <section class="lm-panel">
+              <h4>Response</h4>
+              <pre class="lm-pre"><%- _fmt(c.responseDetail) %></pre>
+            </section>
+          </div>
+        </details>
+      </td>
+    </tr>
     <% }); %>
   </table>
   <% } %>
 
   <h2>Application log (in-memory)</h2>
   <p class="hint">Last <%= entries.length %> diagnostic lines.</p>
-  <pre><% entries.forEach(function (e) { %><span class="meta">[<%= e.ts %>] <%= e.level.toUpperCase() %></span> <%= e.msg %><% if (e.meta) { %> <%= e.meta %><% } %>
+  <pre class="app-log"><% entries.forEach(function (e) { %><span class="meta">[<%= e.ts %>] <%= e.level.toUpperCase() %></span> <%= e.msg %><% if (e.meta) { %> <%= e.meta %><% } %>
 <% }); %></pre>
 </body>
 </html>

@@ -1,7 +1,13 @@
 import { Request, Response, NextFunction } from "express";
 import { chatCompletion } from "../services/provider.service";
 import type { ChatCompletionRequest } from "../types/openai";
-import { recordApiCall } from "../services/apiCallLog.service";
+import {
+  recordApiCall,
+  snapshotChatRequest,
+  snapshotChatRequestFromBody,
+  snapshotChatResponse,
+  snapshotErrorResponse
+} from "../services/apiCallLog.service";
 import { logger } from "../utils/logger";
 
 const CHAT_PATH = "/v1/chat/completions";
@@ -18,7 +24,9 @@ export async function handleChat(req: Request, res: Response, next: NextFunction
         statusCode: 400,
         durationMs: Date.now() - started,
         model: modelLabel,
-        error: "messages required"
+        error: "messages required",
+        requestDetail: snapshotChatRequestFromBody(req.body),
+        responseDetail: snapshotErrorResponse("messages required", 400)
       });
       res.status(400).json({ error: "messages required" });
       return;
@@ -32,7 +40,9 @@ export async function handleChat(req: Request, res: Response, next: NextFunction
       durationMs: Date.now() - started,
       model: body.model?.trim() || "auto",
       messagesCount: body.messages.length,
-      responseModel: out.model
+      responseModel: out.model,
+      requestDetail: snapshotChatRequest(body),
+      responseDetail: snapshotChatResponse(out)
     });
     res.json(out);
   } catch (e) {
@@ -45,7 +55,12 @@ export async function handleChat(req: Request, res: Response, next: NextFunction
       durationMs: Date.now() - started,
       model: modelLabel,
       messagesCount: (req.body as ChatCompletionRequest)?.messages?.length,
-      error: e instanceof Error ? e.message : String(e)
+      error: e instanceof Error ? e.message : String(e),
+      requestDetail: snapshotChatRequestFromBody(req.body),
+      responseDetail: snapshotErrorResponse(
+        e instanceof Error ? e.message : String(e),
+        status >= 400 && status < 600 ? status : 500
+      )
     });
     next(e);
   }
